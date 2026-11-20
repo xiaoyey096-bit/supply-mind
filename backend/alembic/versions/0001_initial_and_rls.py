@@ -18,6 +18,8 @@ TENANT_TABLES = (
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        bind.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=bind)
     if bind.dialect.name != "postgresql":
         return
