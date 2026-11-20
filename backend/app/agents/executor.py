@@ -528,31 +528,36 @@ class EnterpriseAnalysisExecutor:
                 )
             )
             await session.commit()
-            await set_tenant_context(session, principal.tenant_id)
             saved_memories = 0
+            # Memory extraction is best-effort. Keep it in its own session so a model
+            # or policy error cannot roll back (and expire) the run used by append_event.
             try:
-                if await MemoryService().enabled(session, principal.tenant_id, principal.user_id):
-                    candidates = await self.client.extract_memories(
-                        run.question, answer.get("direct_answer") or ""
-                    )
-                    for candidate in candidates:
-                        try:
-                            await MemoryService().upsert(
-                                session,
-                                principal.tenant_id,
-                                principal.user_id,
-                                category=str(candidate.get("category", "")),
-                                memory_key=str(candidate.get("memory_key", "")),
-                                content=str(candidate.get("content", "")),
-                                confidence=float(candidate.get("confidence", 0)),
-                                source_run_id=run.id,
-                            )
-                            saved_memories += 1
-                        except (MemoryPolicyError, TypeError, ValueError):
-                            continue
-                    await session.commit()
+                async with SessionLocal() as memory_session:
+                    await set_tenant_context(memory_session, principal.tenant_id)
+                    if await MemoryService().enabled(
+                        memory_session, principal.tenant_id, principal.user_id
+                    ):
+                        candidates = await self.client.extract_memories(
+                            run.question, answer.get("direct_answer") or ""
+                        )
+                        for candidate in candidates:
+                            try:
+                                await MemoryService().upsert(
+                                    memory_session,
+                                    principal.tenant_id,
+                                    principal.user_id,
+                                    category=str(candidate.get("category", "")),
+                                    memory_key=str(candidate.get("memory_key", "")),
+                                    content=str(candidate.get("content", "")),
+                                    confidence=float(candidate.get("confidence", 0)),
+                                    source_run_id=run.id,
+                                )
+                                saved_memories += 1
+                            except (MemoryPolicyError, TypeError, ValueError):
+                                continue
+                        await memory_session.commit()
             except (ModelResponseError, RuntimeError):
-                await session.rollback()
+                pass
             await append_event(
                 session,
                 run,
