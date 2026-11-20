@@ -3,6 +3,11 @@ frontend/test-results/
 test-results/
 tmp/
 .env
+.env.*
+!.env.example
+!.env.*.example
+docker-compose.override.yml
+data/
 **/__pycache__/
 backend/data/
 frontend/dist/
