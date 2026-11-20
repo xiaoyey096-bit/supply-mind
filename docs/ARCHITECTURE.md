@@ -1,55 +1,37 @@
-# SupplyMind Architecture
+# SupplyMind 架构
 
-## Repository ownership
+## 仓库职责
 
-| Directory | Responsibility | Must not contain |
+| 目录 | 职责 | 禁止包含 |
 | --- | --- | --- |
-| `backend/` | FastAPI API, domain services, Celery tasks, migrations, backend tests | Frontend assets or production secrets |
-| `frontend/` | React/TypeScript console, API/SSE clients, browser tests | Database migrations or server credentials |
-| `database/` | Database contracts, seed documentation, migration index | A second executable migration system |
-| `infra/` | Compose support, Prometheus, Grafana, Helm and deployment manifests | Domain business logic |
-| `docs/` | Architecture, configuration, API and operations documentation | Runtime configuration or generated claims |
+| `backend/` | FastAPI API、领域服务、Celery 任务、数据库迁移、后端测试 | 前端静态资源或生产密钥 |
+| `frontend/` | React/TypeScript 控制台、API/SSE 客户端、浏览器测试 | 数据库迁移或服务端凭据 |
+| `database/` | 数据库契约、种子数据说明、迁移索引 | 第二套可执行的迁移系统 |
+| `infra/` | Compose 支持、Prometheus、Grafana、Helm 与部署清单 | 领域业务逻辑 |
+| `docs/` | 架构、配置、API 与运维文档 | 运行时配置或臆造结论 |
 
-## Backend layering
+## 后端分层
 
-`app/core` provides configuration and cross-cutting infrastructure. `app/modules`
-contains bounded domains. `app/api.py` is the versioned API entry point, while
-domain services call repositories and declared ports. Background tasks persist
-state before external work.
+`app/core` 提供配置与跨领域基础设施。`app/modules` 存放有界领域。`app/api.py` 是带版本号的 API 入口，领域服务通过仓储（repository）和已声明的端口（port）访问外部依赖。后台任务必须先持久化状态，再执行外部操作。
 
-## Runtime boundaries
+## 运行时边界
 
-The API and Worker share the platform PostgreSQL database and Redis broker. MinIO
-is the local S3-compatible object store. Customer MySQL/PostgreSQL databases are
-accessed through short-lived, read-only connections and are never mounted into
-the application container.
+API 与 Worker 共享平台侧 PostgreSQL 数据库和 Redis 消息代理。MinIO 充当本地 S3 兼容对象存储。客户的 MySQL/PostgreSQL 数据库通过短生命周期、只读连接访问，并且永远不会挂载进应用容器。
 
-## Environment modes
+## 环境模式
 
-- Development: Compose, automatic schema creation, demo platform seed, eager local ingestion.
-- Test: isolated SQLite/PostgreSQL test database, mocked model providers, no external customer data.
-- Production: explicit Alembic migration, external PostgreSQL/Redis/S3/OIDC, no demo seed, broker-backed tasks.
+- 开发（Development）：使用 Compose，自动创建数据库结构，写入演示平台种子数据，本地同步执行摄取。
+- 测试（Test）：使用隔离的 SQLite/PostgreSQL 测试数据库，模型服务全部 mock，不接触外部客户数据。
+- 生产（Production）：显式执行 Alembic 迁移，使用外部 PostgreSQL/Redis/S3/OIDC，不加载演示种子，任务通过 broker 异步执行。
 
-## Enterprise Agent runtime
+## 企业级 Agent 运行时
 
-The root LangGraph uses `TypedDict + Annotated` state reducers and durable
-PostgreSQL checkpoints. The Router emits `data`, `knowledge`, `hybrid` or
-`unsupported`; hybrid work uses LangGraph `Send` to run the data and knowledge
-Subagents concurrently. Handoffs, retries and verification remain in the graph
-state, not in browser code.
+根 LangGraph 使用 `TypedDict + Annotated` 作为状态归约器（state reducer），并用 PostgreSQL 做持久化检查点（checkpoint）。Router 输出 `data`、`knowledge`、`hybrid` 或 `unsupported`；hybrid 任务通过 LangGraph 的 `Send` 并发运行数据子代理和知识子代理。Handoff、重试与事实校验都保存在图状态中，而不是放在浏览器代码里。
 
-Subagents call the separately deployed MCP Server. Tool calls carry a short
-lived tenant token, are RBAC checked, schema validated, audited and restricted
-to read-only SQL or an explicit approval workflow. Analysis events are saved in
-PostgreSQL, published to Redis and replayed through SSE with `Last-Event-ID`.
+子代理调用单独部署的 MCP Server。工具调用携带短时租户令牌，经过 RBAC 校验、Schema 校验和审计，并且只允许只读 SQL 或走显式审批流程。分析事件写入 PostgreSQL，再发布到 Redis，最终通过 SSE 以 `Last-Event-ID` 回放。
 
-Knowledge retrieval uses parent/child chunks, Multi-Query, HyDE, dense and
-PostgreSQL BM25 retrieval, RRF fusion, reranking and parent-context mapping.
-User memory is stored independently from checkpoints with a category allowlist,
-confidence, version, expiry and user controls.
+知识检索采用父子分块（parent/child chunks）、Multi-Query、HyDE、稠密检索与 PostgreSQL BM25 检索、RRF 融合、重排以及父文档上下文映射。用户记忆独立于检查点存储，带有类别白名单、置信度、版本、过期时间和用户自助控制。
 
-## API stability rule
+## API 稳定性规则
 
-All changes preserve the existing `/api/v1` contract. New enterprise APIs use
-additive routes. A module change is complete only after API and domain tests
-pass together.
+所有变更都必须保持现有 `/api/v1` 契约不变。新增企业级 API 时使用追加式路由（additive routes）。一个模块的改动只有在 API 测试与领域测试同时通过后，才算完成。
